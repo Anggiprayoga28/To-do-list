@@ -36,9 +36,11 @@ export async function ensureTable(pool) {
         category TEXT NOT NULL DEFAULT 'Idea',
         date DATE NOT NULL DEFAULT CURRENT_DATE,
         start_time TEXT NOT NULL DEFAULT '09:00',
-        end_time TEXT NOT NULL DEFAULT '10:00'
+        end_time TEXT NOT NULL DEFAULT '10:00',
+        workspace TEXT NOT NULL DEFAULT 'default'
       )
     `)
+    await pool.query(`ALTER TABLE todos ADD COLUMN IF NOT EXISTS workspace TEXT NOT NULL DEFAULT 'default'`)
   } catch (e) {
     console.error('ensureTable:', e.message)
   }

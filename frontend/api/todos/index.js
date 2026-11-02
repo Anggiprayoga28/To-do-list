@@ -13,14 +13,17 @@ export default async function handler(req, res) {
   const pool = getPool()
   await ensureTable(pool)
 
+  const workspace = (req.headers['x-workspace'] || req.query.workspace || 'default').toString().trim().toLowerCase()
+
   try {
     if (req.method === 'GET') {
       const result = await pool.query(`
         SELECT id, title, description, category, to_char(date, 'YYYY-MM-DD') as date,
-               start_time, end_time, done, created_at
+               start_time, end_time, done, created_at, workspace
         FROM todos
+        WHERE workspace = $1
         ORDER BY id
-      `)
+      `, [workspace])
       return res.status(200).json(result.rows || [])
     }
 
@@ -35,11 +38,11 @@ export default async function handler(req, res) {
       const taskDate = date || new Date().toISOString().slice(0, 10)
 
       const result = await pool.query(`
-        INSERT INTO todos (title, description, category, date, start_time, end_time, done)
-        VALUES ($1, $2, $3, $4, $5, $6, false)
+        INSERT INTO todos (title, description, category, date, start_time, end_time, done, workspace)
+        VALUES ($1, $2, $3, $4, $5, $6, false, $7)
         RETURNING id, title, description, category, to_char(date, 'YYYY-MM-DD') as date,
-                  start_time, end_time, done, created_at
-      `, [title.trim(), description.trim(), category, taskDate, start_time, end_time])
+                  start_time, end_time, done, created_at, workspace
+      `, [title.trim(), description.trim(), category, taskDate, start_time, end_time, workspace])
 
       return res.status(201).json(result.rows[0])
     }

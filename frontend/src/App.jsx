@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   LayoutGrid, Timer, ArrowLeft, Plus, ChevronLeft, ChevronRight, ChevronDown, Check,
   Lightbulb, Utensils, ClipboardList, Dumbbell, Music, Trash2, Calendar, X,
+  Lock, LogOut, KeyRound,
 } from 'lucide-react'
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -140,11 +141,24 @@ function DateChips({ selected, onSelect, gray, month }) {
   )
 }
 
-function TopBar({ title, light, back, onBack }) {
+function TopBar({ title, light, back, onBack, workspace, onSwitchWorkspace }) {
   return (
-    <div className={`flex items-center justify-between px-6 pt-8 ${light ? 'text-white' : 'text-neutral-800'}`}>
+    <div className={`flex items-center justify-between px-6 pt-7 ${light ? 'text-white' : 'text-neutral-800'}`}>
       {back ? (
         <button type="button" aria-label="Back" onClick={onBack} className="hover:-translate-x-0.5 transition"><ArrowLeft size={18} /></button>
+      ) : workspace ? (
+        <button
+          type="button"
+          onClick={onSwitchWorkspace}
+          title="Ganti Ruang / Keluar"
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition active:scale-95 shadow-sm ${
+            light ? 'bg-white/20 hover:bg-white/30 text-white' : 'bg-soft hover:bg-soft-2 text-brand-dark'
+          }`}
+        >
+          <Lock size={11} />
+          <span className="max-w-[70px] truncate">{workspace}</span>
+          <LogOut size={10} className="opacity-80" />
+        </button>
       ) : <LayoutGrid size={16} />}
       <h2 className="text-[15px] font-medium">{title}</h2>
       <Timer size={18} />
@@ -154,14 +168,15 @@ function TopBar({ title, light, back, onBack }) {
 
 export default function App() {
   const today = useMemo(() => fmt(new Date()), [])
-  const [todos, setTodos] = useState(() => {
+  const [workspace, setWorkspace] = useState(() => {
     try {
-      const cached = localStorage.getItem('todos_cache')
-      return cached ? JSON.parse(cached) : []
+      return localStorage.getItem('todo_workspace') || ''
     } catch {
-      return []
+      return ''
     }
   })
+  const [inputWorkspace, setInputWorkspace] = useState('')
+  const [todos, setTodos] = useState([])
   const [error, setError] = useState('')
   const [selected, setSelected] = useState(today)
   const [stripStart, setStripStart] = useState(parse(today))
@@ -174,6 +189,29 @@ export default function App() {
   const [endT, setEndT] = useState('10:00')
   const [now, setNow] = useState(new Date())
   const nameRef = useRef(null)
+
+  const handleEnterWorkspace = (e) => {
+    e.preventDefault()
+    const trimmed = inputWorkspace.trim().toLowerCase()
+    if (!trimmed) return
+    setWorkspace(trimmed)
+    try {
+      localStorage.setItem('todo_workspace', trimmed)
+    } catch {}
+    setInputWorkspace('')
+    showToast(`Masuk ke ruang "${trimmed}"`, 'success')
+  }
+
+  const handleSwitchWorkspace = () => {
+    const prev = workspace
+    setWorkspace('')
+    try {
+      localStorage.removeItem('todo_workspace')
+    } catch {}
+    setTodos([])
+    showToast(`Keluar dari ruang "${prev}"`, 'delete')
+  }
+
   const pageFromHash = () => {
     const h = window.location.hash.replace('#/', '')
     return ['activity', 'create'].includes(h) ? h : 'home'
@@ -191,22 +229,40 @@ export default function App() {
     return () => clearInterval(id)
   }, [])
 
-  const request = async (url, options) => {
-    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options })
+  const request = async (url, options = {}) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-workspace': workspace || 'default',
+      ...(options.headers || {}),
+    }
+    const res = await fetch(url, { ...options, headers })
     if (!res.ok) throw new Error('Request failed')
     return res.status === 204 ? null : res.json()
   }
 
+  const saveTodosCache = (data) => {
+    if (!workspace) return
+    try { localStorage.setItem(`todos_cache_${workspace}`, JSON.stringify(data)) } catch {}
+  }
+
   useEffect(() => {
+    if (!workspace) return
+    const cacheKey = `todos_cache_${workspace}`
+    try {
+      const cached = localStorage.getItem(cacheKey)
+      if (cached) setTodos(JSON.parse(cached))
+      else setTodos([])
+    } catch {}
+
     request(API)
       .then((data) => {
         if (Array.isArray(data)) {
           setTodos(data)
-          try { localStorage.setItem('todos_cache', JSON.stringify(data)) } catch {}
+          saveTodosCache(data)
         }
       })
       .catch(() => setError('Cannot connect to server'))
-  }, [])
+  }, [workspace])
 
   const [showCalendarModal, setShowCalendarModal] = useState(false)
 
@@ -245,7 +301,7 @@ export default function App() {
     // 1. Instant optimistic add and go to home
     const next = [...todos, tempTask]
     setTodos(next)
-    try { localStorage.setItem('todos_cache', JSON.stringify(next)) } catch {}
+    saveTodosCache(next)
     setName('')
     setDesc('')
     setError('')
@@ -268,7 +324,7 @@ export default function App() {
       if (saved && saved.id) {
         setTodos((curr) => {
           const updated = curr.map((x) => (x.id === tempId ? saved : x))
-          try { localStorage.setItem('todos_cache', JSON.stringify(updated)) } catch {}
+          saveTodosCache(updated)
           return updated
         })
       }
@@ -295,7 +351,7 @@ export default function App() {
     // 1. Instant optimistic update (0ms UI reaction)
     const next = todos.map((x) => (x.id === t.id ? { ...x, done: updatedDone } : x))
     setTodos(next)
-    try { localStorage.setItem('todos_cache', JSON.stringify(next)) } catch {}
+    saveTodosCache(next)
 
     // 2. Background sync to database
     try {
@@ -304,12 +360,16 @@ export default function App() {
         body: JSON.stringify({ done: updatedDone }),
       })
       if (u && u.id) {
-        setTodos((curr) => curr.map((x) => (x.id === u.id ? u : x)))
+        setTodos((curr) => {
+          const updated = curr.map((x) => (x.id === u.id ? u : x))
+          saveTodosCache(updated)
+          return updated
+        })
       }
     } catch (err) {
       // Revert if failed
       setTodos(todos)
-      try { localStorage.setItem('todos_cache', JSON.stringify(todos)) } catch {}
+      saveTodosCache(todos)
       setError(err.message)
     }
   }
@@ -345,13 +405,13 @@ export default function App() {
     const next = todos.filter((t) => t.id !== id)
     // Instant optimistic removal (0ms UI reaction)
     setTodos(next)
-    try { localStorage.setItem('todos_cache', JSON.stringify(next)) } catch {}
+    saveTodosCache(next)
 
     try {
       await request(`${API}/${id}`, { method: 'DELETE' })
     } catch (err) {
       setTodos(prev)
-      try { localStorage.setItem('todos_cache', JSON.stringify(prev)) } catch {}
+      saveTodosCache(prev)
       setError(err.message)
     }
   }
@@ -385,10 +445,76 @@ export default function App() {
 
   return (
     <main className="min-h-screen flex items-center justify-center p-6">
-      {/* Page 1: Today */}
-      {page === 'home' && <Phone toast={toast} onCloseToast={() => setToast(null)}>
-        <div className="absolute inset-x-0 top-0 h-[235px] bg-brand">
-          <TopBar title={`${sel.getDate()} ${MONTHS[sel.getMonth()] === 'September' ? 'Sept' : MONTHS[sel.getMonth()].slice(0, 3)}`} light />
+      {!workspace ? (
+        <Phone toast={toast} onCloseToast={() => setToast(null)}>
+          <div className="absolute inset-x-0 top-0 h-[225px] bg-brand flex flex-col justify-between p-6 text-white">
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] font-semibold tracking-wide uppercase opacity-90">To-Do List</span>
+              <div className="w-8 h-8 rounded-full bg-white/20 backdrop-blur flex items-center justify-center">
+                <Lock size={15} />
+              </div>
+            </div>
+            <div>
+              <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center mb-3">
+                <KeyRound size={22} className="text-white" />
+              </div>
+              <h1 className="text-[22px] font-bold leading-tight">Ruang Pribadi</h1>
+              <p className="text-[12px] opacity-90 mt-1">Masukkan nama ruang atau kode PIN Anda</p>
+            </div>
+          </div>
+
+          <div className="absolute inset-x-0 top-[195px] bottom-0 bg-white rounded-t-[30px] p-6 flex flex-col justify-between">
+            <form onSubmit={handleEnterWorkspace} className="flex-1 flex flex-col pt-2">
+              <label htmlFor="room-input" className="text-[12px] font-semibold text-neutral-700 mb-1.5">
+                Nama Ruang / Kode PIN
+              </label>
+              <div className="relative">
+                <input
+                  id="room-input"
+                  type="text"
+                  value={inputWorkspace}
+                  onChange={(e) => setInputWorkspace(e.target.value)}
+                  placeholder="misal: anggi atau 1234"
+                  autoFocus
+                  required
+                  className="w-full h-[46px] rounded-xl border border-neutral-300 focus:border-brand px-3.5 text-[14px] font-medium outline-none transition shadow-sm focus:ring-2 focus:ring-brand/20"
+                />
+              </div>
+
+              <p className="text-[11px] text-neutral-500 mt-3 leading-relaxed">
+                💡 <strong>Setiap orang punya ruangnya sendiri.</strong> Tugas Anda hanya dapat dilihat dan diubah oleh mereka yang mengetahui nama ruang atau PIN yang sama.
+              </p>
+
+              <button
+                type="submit"
+                id="btn-enter-room"
+                className="mt-6 w-full h-[46px] rounded-xl bg-brand text-white text-[13px] font-semibold hover:bg-brand-dark shadow-md shadow-brand/30 active:scale-[0.98] transition flex items-center justify-center gap-2"
+              >
+                <span>Buka Tugas Saya</span>
+                <ChevronRight size={16} />
+              </button>
+
+              <div className="mt-auto p-3.5 rounded-xl bg-soft border border-soft-2 text-[11px] text-neutral-600 leading-relaxed">
+                <p className="font-semibold text-brand-dark mb-1">Tips:</p>
+                <ul className="list-disc pl-4 space-y-1">
+                  <li>Tidak perlu registrasi atau password ribet.</li>
+                  <li>Ingin berbagi tugas bersama tim/keluarga? Cukup gunakan nama ruang yang sama!</li>
+                </ul>
+              </div>
+            </form>
+          </div>
+        </Phone>
+      ) : (
+        <>
+          {/* Page 1: Today */}
+          {page === 'home' && <Phone toast={toast} onCloseToast={() => setToast(null)}>
+            <div className="absolute inset-x-0 top-0 h-[235px] bg-brand">
+              <TopBar
+                title={`${sel.getDate()} ${MONTHS[sel.getMonth()] === 'September' ? 'Sept' : MONTHS[sel.getMonth()].slice(0, 3)}`}
+                light
+                workspace={workspace}
+                onSwitchWorkspace={handleSwitchWorkspace}
+              />
           <div className="flex items-end justify-between px-6 mt-8">
             <div className="text-white">
               <p className="text-[22px] font-medium leading-none">
@@ -699,108 +825,110 @@ export default function App() {
         </button>
       </Phone>}
 
-      {/* Page 3: Create Task form */}
-      {page === 'create' && <Phone toast={toast} onCloseToast={() => setToast(null)}>
-        <div className="bg-soft pb-4 rounded-b-[26px]">
-          <TopBar title="Create Task" back onBack={() => go('activity')} />
-          <div className="h-3" />
-        </div>
-        <form onSubmit={create} className="px-5 pt-3">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <button type="button" aria-label="Previous month" className="text-neutral-400 hover:text-brand"
-              onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}>‹</button>
-            <span className="bg-neutral-800 text-white text-[9px] px-3 py-0.5 rounded">{MONTHS[month.getMonth()]}</span>
-            <button type="button" aria-label="Next month" className="text-neutral-400 hover:text-brand"
-              onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}>›</button>
-          </div>
-          <div className="grid grid-cols-8 gap-y-1.5 text-center text-[9px]">
-            <span />
-            {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((d, i) => (
-              <span key={d} className={i > 4 ? 'text-brand font-medium' : 'text-neutral-500'}>{d}</span>
-            ))}
-            {weeks.map(({ week, days }) => (
-              <div key={week + fmt(days[0])} className="contents">
-                <span className="mx-auto h-[18px] w-[18px] rounded-[3px] bg-neutral-800 text-white text-[8px] flex items-center justify-center">{week}</span>
-                {days.map((d, i) => {
-                  const out = d.getMonth() !== month.getMonth()
-                  const act = fmt(d) === selected
-                  return (
-                    <button
-                      type="button"
-                      key={fmt(d)}
-                      onClick={() => pickFromCalendar(d)}
-                      className={`mx-auto h-[18px] w-[18px] rounded-[3px] flex items-center justify-center transition hover:bg-soft-2 ${
-                        act ? 'bg-neutral-800 text-white font-semibold hover:bg-neutral-800'
-                          : out ? 'text-neutral-300'
-                          : i > 4 ? 'text-brand font-medium' : 'text-neutral-800 font-medium'
-                      }`}
-                    >
-                      {d.getDate()}
-                    </button>
-                  )
-                })}
+          {/* Page 3: Create Task form */}
+          {page === 'create' && <Phone toast={toast} onCloseToast={() => setToast(null)}>
+            <div className="bg-soft pb-4 rounded-b-[26px]">
+              <TopBar title="Create Task" back onBack={() => go('activity')} />
+              <div className="h-3" />
+            </div>
+            <form onSubmit={create} className="px-5 pt-3">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <button type="button" aria-label="Previous month" className="text-neutral-400 hover:text-brand"
+                  onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}>‹</button>
+                <span className="bg-neutral-800 text-white text-[9px] px-3 py-0.5 rounded">{MONTHS[month.getMonth()]}</span>
+                <button type="button" aria-label="Next month" className="text-neutral-400 hover:text-brand"
+                  onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}>›</button>
               </div>
-            ))}
-          </div>
-
-          <div className="relative mt-3">
-            <button
-              type="button"
-              id="category-select"
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="w-full flex items-center gap-3 rounded-lg bg-soft h-[48px] px-4 shadow-sm"
-            >
-              <CatIcon size={22} strokeWidth={1.4} className="text-brand" />
-              <span className="flex-1 text-left text-[15px]">{category}</span>
-              <ChevronDown size={16} className={`transition ${menuOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {menuOpen && (
-              <ul className="absolute z-10 mt-1 w-full rounded-lg bg-white shadow-xl border border-soft-2 overflow-hidden animate-pop">
-                {CATEGORIES.map(({ name: n, icon: Icon }) => (
-                  <li key={n}>
-                    <button
-                      type="button"
-                      onClick={() => { setCategory(n); setMenuOpen(false) }}
-                      className="w-full flex items-center gap-3 px-4 py-2 text-sm hover:bg-soft"
-                    >
-                      <Icon size={16} className="text-brand" /> {n}
-                    </button>
-                  </li>
+              <div className="grid grid-cols-8 gap-y-1.5 text-center text-[9px]">
+                <span />
+                {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((d, i) => (
+                  <span key={d} className={i > 4 ? 'text-brand font-medium' : 'text-neutral-500'}>{d}</span>
                 ))}
-              </ul>
-            )}
-          </div>
+                {weeks.map(({ week, days }) => (
+                  <div key={week + fmt(days[0])} className="contents">
+                    <span className="mx-auto h-[18px] w-[18px] rounded-[3px] bg-neutral-800 text-white text-[8px] flex items-center justify-center">{week}</span>
+                    {days.map((d, i) => {
+                      const out = d.getMonth() !== month.getMonth()
+                      const act = fmt(d) === selected
+                      return (
+                        <button
+                          type="button"
+                          key={fmt(d)}
+                          onClick={() => pickFromCalendar(d)}
+                          className={`mx-auto h-[18px] w-[18px] rounded-[3px] flex items-center justify-center transition hover:bg-soft-2 ${
+                            act ? 'bg-neutral-800 text-white font-semibold hover:bg-neutral-800'
+                              : out ? 'text-neutral-300'
+                              : i > 4 ? 'text-brand font-medium' : 'text-neutral-800 font-medium'
+                          }`}
+                        >
+                          {d.getDate()}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
 
-          <input
-            ref={nameRef}
-            id="task-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Name"
-            className="mt-3 w-full rounded border border-neutral-300 px-2 h-[30px] text-[11px] outline-none focus:border-brand"
-          />
-          <textarea
-            id="task-desc"
-            value={desc}
-            onChange={(e) => setDesc(e.target.value)}
-            placeholder="Task Description..."
-            className="mt-2 w-full h-[72px] resize-none rounded border border-neutral-300 px-2 py-1.5 text-[11px] outline-none focus:border-brand"
-          />
-          <div className="mt-2 flex gap-2 text-[11px]">
-            <input type="time" value={startT} onChange={(e) => setStartT(e.target.value)}
-              className="flex-1 rounded border border-neutral-300 px-2 h-[28px] outline-none focus:border-brand" />
-            <input type="time" value={endT} onChange={(e) => setEndT(e.target.value)}
-              className="flex-1 rounded border border-neutral-300 px-2 h-[28px] outline-none focus:border-brand" />
-          </div>
-          <button
-            id="create-task"
-            className="mt-3 w-full h-[32px] rounded bg-brand text-white text-[12px] font-medium hover:bg-brand-dark active:scale-[0.98] transition"
-          >
-            Create Task
-          </button>
-          {error && <p className="mt-2 text-center text-[10px] text-red-500">{error}</p>}
-        </form>
-      </Phone>}
+              <div className="relative mt-3">
+                <button
+                  type="button"
+                  id="category-select"
+                  onClick={() => setMenuOpen(!menuOpen)}
+                  className="w-full flex items-center gap-3 rounded-lg bg-soft h-[48px] px-4 shadow-sm"
+                >
+                  <CatIcon size={22} strokeWidth={1.4} className="text-brand" />
+                  <span className="flex-1 text-left text-[15px]">{category}</span>
+                  <ChevronDown size={16} className={`transition ${menuOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {menuOpen && (
+                  <ul className="absolute z-10 mt-1 w-full rounded-lg bg-white shadow-xl border border-soft-2 overflow-hidden animate-pop">
+                    {CATEGORIES.map(({ name: n, icon: Icon }) => (
+                      <li key={n}>
+                        <button
+                          type="button"
+                          onClick={() => { setCategory(n); setMenuOpen(false) }}
+                          className="w-full flex items-center gap-3 px-4 py-2 text-sm hover:bg-soft"
+                        >
+                          <Icon size={16} className="text-brand" /> {n}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <input
+                ref={nameRef}
+                id="task-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Name"
+                className="mt-3 w-full rounded border border-neutral-300 px-2 h-[30px] text-[11px] outline-none focus:border-brand"
+              />
+              <textarea
+                id="task-desc"
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                placeholder="Task Description..."
+                className="mt-2 w-full h-[72px] resize-none rounded border border-neutral-300 px-2 py-1.5 text-[11px] outline-none focus:border-brand"
+              />
+              <div className="mt-2 flex gap-2 text-[11px]">
+                <input type="time" value={startT} onChange={(e) => setStartT(e.target.value)}
+                  className="flex-1 rounded border border-neutral-300 px-2 h-[28px] outline-none focus:border-brand" />
+                <input type="time" value={endT} onChange={(e) => setEndT(e.target.value)}
+                  className="flex-1 rounded border border-neutral-300 px-2 h-[28px] outline-none focus:border-brand" />
+              </div>
+              <button
+                id="create-task"
+                className="mt-3 w-full h-[32px] rounded bg-brand text-white text-[12px] font-medium hover:bg-brand-dark active:scale-[0.98] transition"
+              >
+                Create Task
+              </button>
+              {error && <p className="mt-2 text-center text-[10px] text-red-500">{error}</p>}
+            </form>
+          </Phone>}
+        </>
+      )}
     </main>
   )
 }

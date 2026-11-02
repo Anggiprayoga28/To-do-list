@@ -18,6 +18,8 @@ export default async function handler(req, res) {
   const pool = getPool()
   await ensureTable(pool)
 
+  const workspace = (req.headers['x-workspace'] || req.query.workspace || 'default').toString().trim().toLowerCase()
+
   try {
     if (req.method === 'PUT') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {})
@@ -26,10 +28,10 @@ export default async function handler(req, res) {
       const result = await pool.query(`
         UPDATE todos
         SET done = $1
-        WHERE id = $2
+        WHERE id = $2 AND workspace = $3
         RETURNING id, title, description, category, to_char(date, 'YYYY-MM-DD') as date,
-                  start_time, end_time, done, created_at
-      `, [Boolean(done), id])
+                  start_time, end_time, done, created_at, workspace
+      `, [Boolean(done), id, workspace])
 
       if (result.rowCount === 0) {
         return res.status(404).json({ error: 'Todo not found' })
@@ -38,7 +40,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'DELETE') {
-      await pool.query('DELETE FROM todos WHERE id = $1', [id])
+      await pool.query('DELETE FROM todos WHERE id = $1 AND workspace = $2', [id, workspace])
       return res.status(204).end()
     }
 
