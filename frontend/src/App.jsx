@@ -133,7 +133,14 @@ function TopBar({ title, light, back, onBack }) {
 
 export default function App() {
   const today = useMemo(() => fmt(new Date()), [])
-  const [todos, setTodos] = useState([])
+  const [todos, setTodos] = useState(() => {
+    try {
+      const cached = localStorage.getItem('todos_cache')
+      return cached ? JSON.parse(cached) : []
+    } catch {
+      return []
+    }
+  })
   const [error, setError] = useState('')
   const [selected, setSelected] = useState(today)
   const [stripStart, setStripStart] = useState(parse(today))
@@ -170,7 +177,14 @@ export default function App() {
   }
 
   useEffect(() => {
-    request(API).then(setTodos).catch(() => setError('Cannot connect to server'))
+    request(API)
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setTodos(data)
+          try { localStorage.setItem('todos_cache', JSON.stringify(data)) } catch {}
+        }
+      })
+      .catch(() => setError('Cannot connect to server'))
   }, [])
 
   const [showCalendarModal, setShowCalendarModal] = useState(false)
@@ -193,27 +207,78 @@ export default function App() {
   const create = async (e) => {
     e.preventDefault()
     if (!name.trim()) { nameRef.current?.focus(); return }
+
+    const tempId = Date.now()
+    const tempTask = {
+      id: tempId,
+      title: name.trim(),
+      description: desc.trim(),
+      category,
+      date: selected,
+      start_time: startT,
+      end_time: endT,
+      done: false,
+      created_at: new Date().toISOString(),
+    }
+
+    // 1. Instant optimistic add and go to home
+    const next = [...todos, tempTask]
+    setTodos(next)
+    try { localStorage.setItem('todos_cache', JSON.stringify(next)) } catch {}
+    setName('')
+    setDesc('')
+    setError('')
+    go('home')
+
+    // 2. Background sync to database
     try {
-      const t = await request(API, {
+      const saved = await request(API, {
         method: 'POST',
         body: JSON.stringify({
-          title: name.trim(), description: desc.trim(), category,
-          date: selected, start_time: startT, end_time: endT,
+          title: tempTask.title,
+          description: tempTask.description,
+          category: tempTask.category,
+          date: tempTask.date,
+          start_time: tempTask.start_time,
+          end_time: tempTask.end_time,
         }),
       })
-      setTodos([...todos, t])
-      setName(''); setDesc(''); setError('')
-      go('home')
-    } catch (err) { setError(err.message) }
+      if (saved && saved.id) {
+        setTodos((curr) => {
+          const updated = curr.map((x) => (x.id === tempId ? saved : x))
+          try { localStorage.setItem('todos_cache', JSON.stringify(updated)) } catch {}
+          return updated
+        })
+      }
+    } catch (err) {
+      setError(err.message)
+    }
   }
 
   const [confirmTask, setConfirmTask] = useState(null)
 
   const toggle = async (t) => {
+    const updatedDone = !t.done
+    // 1. Instant optimistic update (0ms UI reaction)
+    const next = todos.map((x) => (x.id === t.id ? { ...x, done: updatedDone } : x))
+    setTodos(next)
+    try { localStorage.setItem('todos_cache', JSON.stringify(next)) } catch {}
+
+    // 2. Background sync to database
     try {
-      const u = await request(`${API}/${t.id}`, { method: 'PUT', body: JSON.stringify({ done: !t.done }) })
-      setTodos(todos.map((x) => (x.id === u.id ? u : x)))
-    } catch (err) { setError(err.message) }
+      const u = await request(`${API}/${t.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ done: updatedDone }),
+      })
+      if (u && u.id) {
+        setTodos((curr) => curr.map((x) => (x.id === u.id ? u : x)))
+      }
+    } catch (err) {
+      // Revert if failed
+      setTodos(todos)
+      try { localStorage.setItem('todos_cache', JSON.stringify(todos)) } catch {}
+      setError(err.message)
+    }
   }
 
   const handleToggle = (t) => {
@@ -232,10 +297,19 @@ export default function App() {
   }
 
   const remove = async (id) => {
+    const prev = todos
+    const next = todos.filter((t) => t.id !== id)
+    // Instant optimistic removal (0ms UI reaction)
+    setTodos(next)
+    try { localStorage.setItem('todos_cache', JSON.stringify(next)) } catch {}
+
     try {
       await request(`${API}/${id}`, { method: 'DELETE' })
-      setTodos(todos.filter((t) => t.id !== id))
-    } catch (err) { setError(err.message) }
+    } catch (err) {
+      setTodos(prev)
+      try { localStorage.setItem('todos_cache', JSON.stringify(prev)) } catch {}
+      setError(err.message)
+    }
   }
 
   const dayTasks = todos

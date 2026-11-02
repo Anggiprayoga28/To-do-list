@@ -2,6 +2,7 @@ import pg from 'pg'
 const { Pool } = pg
 
 let pool
+let tableEnsured = false
 
 export function getPool() {
   if (!pool) {
@@ -13,23 +14,32 @@ export function getPool() {
     pool = new Pool({
       connectionString,
       ssl: { rejectUnauthorized: false },
+      max: 4,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
     })
   }
   return pool
 }
 
 export async function ensureTable(pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS todos (
-      id SERIAL PRIMARY KEY,
-      title TEXT NOT NULL,
-      done BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      description TEXT NOT NULL DEFAULT '',
-      category TEXT NOT NULL DEFAULT 'Idea',
-      date DATE NOT NULL DEFAULT CURRENT_DATE,
-      start_time TEXT NOT NULL DEFAULT '09:00',
-      end_time TEXT NOT NULL DEFAULT '10:00'
-    )
-  `)
+  if (tableEnsured) return
+  tableEnsured = true
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS todos (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        done BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        description TEXT NOT NULL DEFAULT '',
+        category TEXT NOT NULL DEFAULT 'Idea',
+        date DATE NOT NULL DEFAULT CURRENT_DATE,
+        start_time TEXT NOT NULL DEFAULT '09:00',
+        end_time TEXT NOT NULL DEFAULT '10:00'
+      )
+    `)
+  } catch (e) {
+    console.error('ensureTable:', e.message)
+  }
 }
