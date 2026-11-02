@@ -1,0 +1,23 @@
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Go
+backend/server
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Environment
+.env
+.env.*.local
+
+# OS & Editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
