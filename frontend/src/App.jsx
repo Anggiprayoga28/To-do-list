@@ -268,7 +268,7 @@ export default function App() {
       else setTodos([])
     } catch {}
 
-    request(API)
+    request(`${API}?workspace=${encodeURIComponent(workspace)}`)
       .then((data) => {
         if (Array.isArray(data)) {
           setTodos(data)
@@ -324,7 +324,7 @@ export default function App() {
 
     // 2. Background sync to database
     try {
-      const saved = await request(API, {
+      const saved = await request(`${API}?workspace=${encodeURIComponent(workspace)}`, {
         method: 'POST',
         body: JSON.stringify({
           title: tempTask.title,
@@ -333,6 +333,7 @@ export default function App() {
           date: tempTask.date,
           start_time: tempTask.start_time,
           end_time: tempTask.end_time,
+          workspace,
         }),
       })
       if (saved && saved.id) {
@@ -369,7 +370,7 @@ export default function App() {
 
     // 2. Background sync to database
     try {
-      const u = await request(`${API}/${t.id}`, {
+      const u = await request(`${API}/${t.id}?workspace=${encodeURIComponent(workspace)}`, {
         method: 'PUT',
         body: JSON.stringify({ done: updatedDone }),
       })
@@ -422,7 +423,7 @@ export default function App() {
     saveTodosCache(next)
 
     try {
-      await request(`${API}/${id}`, { method: 'DELETE' })
+      await request(`${API}/${id}?workspace=${encodeURIComponent(workspace)}`, { method: 'DELETE' })
     } catch (err) {
       setTodos(prev)
       saveTodosCache(prev)

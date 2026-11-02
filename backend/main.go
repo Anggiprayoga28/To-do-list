@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,13 +22,14 @@ type Todo struct {
 	StartTime   string    `json:"start_time"`
 	EndTime     string    `json:"end_time"`
 	Done        bool      `json:"done"`
+	Workspace   string    `json:"workspace"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-const cols = `id, title, description, category, to_char(date,'YYYY-MM-DD'), start_time, end_time, done, created_at`
+const cols = `id, title, description, category, to_char(date,'YYYY-MM-DD'), start_time, end_time, done, workspace, created_at`
 
 func scan(row interface{ Scan(...any) error }, t *Todo) error {
-	return row.Scan(&t.ID, &t.Title, &t.Description, &t.Category, &t.Date, &t.StartTime, &t.EndTime, &t.Done, &t.CreatedAt)
+	return row.Scan(&t.ID, &t.Title, &t.Description, &t.Category, &t.Date, &t.StartTime, &t.EndTime, &t.Done, &t.Workspace, &t.CreatedAt)
 }
 
 var db *pgxpool.Pool
@@ -37,6 +39,17 @@ func env(k, d string) string {
 		return v
 	}
 	return d
+}
+
+func getWorkspace(r *http.Request) string {
+	ws := strings.TrimSpace(r.Header.Get("x-workspace"))
+	if ws == "" {
+		ws = strings.TrimSpace(r.URL.Query().Get("workspace"))
+	}
+	if ws == "" {
+		ws = "default"
+	}
+	return strings.ToLower(ws)
 }
 
 func main() {
@@ -64,6 +77,8 @@ func main() {
 		`ALTER TABLE todos ADD COLUMN IF NOT EXISTS date DATE NOT NULL DEFAULT CURRENT_DATE`,
 		`ALTER TABLE todos ADD COLUMN IF NOT EXISTS start_time TEXT NOT NULL DEFAULT '09:00'`,
 		`ALTER TABLE todos ADD COLUMN IF NOT EXISTS end_time TEXT NOT NULL DEFAULT '10:00'`,
+		`ALTER TABLE todos ADD COLUMN IF NOT EXISTS workspace TEXT NOT NULL DEFAULT 'default'`,
+		`CREATE INDEX IF NOT EXISTS idx_todos_workspace ON todos (workspace)`,
 	} {
 		if _, err = db.Exec(ctx, q); err != nil {
 			log.Fatal(err)
@@ -85,7 +100,7 @@ func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", env("CORS_ORIGIN", "*"))
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, x-workspace")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -105,7 +120,8 @@ func fail(w http.ResponseWriter, code int, msg string) {
 }
 
 func listTodos(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query(r.Context(), `SELECT `+cols+` FROM todos ORDER BY date, start_time, id`)
+	ws := getWorkspace(r)
+	rows, err := db.Query(r.Context(), `SELECT `+cols+` FROM todos WHERE workspace = $1 ORDER BY date, start_time, id`, ws)
 	if err != nil {
 		fail(w, 500, err.Error())
 		return
@@ -124,6 +140,7 @@ func listTodos(w http.ResponseWriter, r *http.Request) {
 }
 
 func createTodo(w http.ResponseWriter, r *http.Request) {
+	ws := getWorkspace(r)
 	var in struct {
 		Title       string `json:"title"`
 		Description string `json:"description"`
@@ -131,10 +148,14 @@ func createTodo(w http.ResponseWriter, r *http.Request) {
 		Date        string `json:"date"`
 		StartTime   string `json:"start_time"`
 		EndTime     string `json:"end_time"`
+		Workspace   string `json:"workspace"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Title == "" {
 		fail(w, 400, "title wajib diisi")
 		return
+	}
+	if in.Workspace != "" {
+		ws = strings.ToLower(strings.TrimSpace(in.Workspace))
 	}
 	if in.Category == "" {
 		in.Category = "Idea"
@@ -150,9 +171,9 @@ func createTodo(w http.ResponseWriter, r *http.Request) {
 	}
 	var t Todo
 	err := scan(db.QueryRow(r.Context(),
-		`INSERT INTO todos (title, description, category, date, start_time, end_time)
-		 VALUES ($1,$2,$3,$4::date,$5,$6) RETURNING `+cols,
-		in.Title, in.Description, in.Category, in.Date, in.StartTime, in.EndTime), &t)
+		`INSERT INTO todos (title, description, category, date, start_time, end_time, workspace)
+		 VALUES ($1,$2,$3,$4::date,$5,$6,$7) RETURNING `+cols,
+		in.Title, in.Description, in.Category, in.Date, in.StartTime, in.EndTime, ws), &t)
 	if err != nil {
 		fail(w, 500, err.Error())
 		return
@@ -166,6 +187,7 @@ func updateTodo(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "id tidak valid")
 		return
 	}
+	ws := getWorkspace(r)
 	var in struct {
 		Title *string `json:"title"`
 		Done  *bool   `json:"done"`
@@ -177,7 +199,7 @@ func updateTodo(w http.ResponseWriter, r *http.Request) {
 	var t Todo
 	err = scan(db.QueryRow(r.Context(),
 		`UPDATE todos SET title = COALESCE($2, title), done = COALESCE($3, done)
-		 WHERE id = $1 RETURNING `+cols, id, in.Title, in.Done), &t)
+		 WHERE id = $1 AND workspace = $4 RETURNING `+cols, id, in.Title, in.Done, ws), &t)
 	if err != nil {
 		fail(w, 404, "todo tidak ditemukan")
 		return
@@ -191,7 +213,8 @@ func deleteTodo(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "id tidak valid")
 		return
 	}
-	if _, err := db.Exec(r.Context(), `DELETE FROM todos WHERE id = $1`, id); err != nil {
+	ws := getWorkspace(r)
+	if _, err := db.Exec(r.Context(), `DELETE FROM todos WHERE id = $1 AND workspace = $2`, id, ws); err != nil {
 		fail(w, 500, err.Error())
 		return
 	}
