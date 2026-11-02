@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   LayoutGrid, Timer, ArrowLeft, Plus, ChevronLeft, ChevronRight, ChevronDown, Check,
   Lightbulb, Utensils, ClipboardList, Dumbbell, Music, Trash2, Calendar, X,
-  Lock, LogOut, KeyRound,
+  Lock, LogOut, KeyRound, Users, ArrowRightLeft,
 } from 'lucide-react'
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -141,7 +141,10 @@ function DateChips({ selected, onSelect, gray, month }) {
   )
 }
 
-function TopBar({ title, light, back, onBack, workspace, onSwitchWorkspace }) {
+function TopBar({ title, light, back, onBack, workspace, onOpenProfileModal }) {
+  const isAnggi = workspace === 'anggi'
+  const isCia = workspace === 'cia'
+
   return (
     <div className={`flex items-center justify-between px-6 pt-7 ${light ? 'text-white' : 'text-neutral-800'}`}>
       {back ? (
@@ -149,15 +152,16 @@ function TopBar({ title, light, back, onBack, workspace, onSwitchWorkspace }) {
       ) : workspace ? (
         <button
           type="button"
-          onClick={onSwitchWorkspace}
-          title="Ganti Ruang / Keluar"
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition active:scale-95 shadow-sm ${
+          id="btn-workspace-badge"
+          onClick={onOpenProfileModal}
+          title="Ganti Profil / Ruang"
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition active:scale-95 shadow-sm ${
             light ? 'bg-white/20 hover:bg-white/30 text-white' : 'bg-soft hover:bg-soft-2 text-brand-dark'
           }`}
         >
-          <Lock size={11} />
-          <span className="max-w-[70px] truncate">{workspace}</span>
-          <LogOut size={10} className="opacity-80" />
+          <span className="text-[12px]">{isAnggi ? '👤' : isCia ? '🌸' : '🔒'}</span>
+          <span className="max-w-[70px] truncate capitalize">{workspace}</span>
+          <ArrowRightLeft size={10} className="opacity-80 ml-0.5" />
         </button>
       ) : <LayoutGrid size={16} />}
       <h2 className="text-[15px] font-medium">{title}</h2>
@@ -190,16 +194,25 @@ export default function App() {
   const [now, setNow] = useState(new Date())
   const nameRef = useRef(null)
 
-  const handleEnterWorkspace = (e) => {
-    e.preventDefault()
-    const trimmed = inputWorkspace.trim().toLowerCase()
+  const [showProfileModal, setShowProfileModal] = useState(false)
+
+  const selectProfile = (id) => {
+    const trimmed = id.trim().toLowerCase()
     if (!trimmed) return
     setWorkspace(trimmed)
     try {
       localStorage.setItem('todo_workspace', trimmed)
     } catch {}
+    const displayName = trimmed === 'anggi' ? 'Anggi' : trimmed === 'cia' ? 'Cia' : trimmed
+    showToast(`Masuk ke ruang ${displayName}`, 'success')
+  }
+
+  const handleEnterWorkspace = (e) => {
+    e.preventDefault()
+    const trimmed = inputWorkspace.trim().toLowerCase()
+    if (!trimmed) return
+    selectProfile(trimmed)
     setInputWorkspace('')
-    showToast(`Masuk ke ruang "${trimmed}"`, 'success')
   }
 
   const handleSwitchWorkspace = () => {
@@ -209,7 +222,8 @@ export default function App() {
       localStorage.removeItem('todo_workspace')
     } catch {}
     setTodos([])
-    showToast(`Keluar dari ruang "${prev}"`, 'delete')
+    const displayName = prev === 'anggi' ? 'Anggi' : prev === 'cia' ? 'Cia' : prev
+    showToast(`Keluar dari ruang ${displayName}`, 'delete')
   }
 
   const pageFromHash = () => {
@@ -447,61 +461,87 @@ export default function App() {
     <main className="min-h-screen flex items-center justify-center p-6">
       {!workspace ? (
         <Phone toast={toast} onCloseToast={() => setToast(null)}>
-          <div className="absolute inset-x-0 top-0 h-[225px] bg-brand flex flex-col justify-between p-6 text-white">
+          <div className="absolute inset-x-0 top-0 h-[210px] bg-brand flex flex-col justify-between p-6 text-white">
             <div className="flex items-center justify-between">
               <span className="text-[12px] font-semibold tracking-wide uppercase opacity-90">To-Do List</span>
               <div className="w-8 h-8 rounded-full bg-white/20 backdrop-blur flex items-center justify-center">
-                <Lock size={15} />
+                <Users size={16} />
               </div>
             </div>
             <div>
-              <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center mb-3">
-                <KeyRound size={22} className="text-white" />
-              </div>
-              <h1 className="text-[22px] font-bold leading-tight">Ruang Pribadi</h1>
-              <p className="text-[12px] opacity-90 mt-1">Masukkan nama ruang atau kode PIN Anda</p>
+              <h1 className="text-[23px] font-bold leading-tight">Siapa yang Menggunakan?</h1>
+              <p className="text-[12px] opacity-90 mt-1">Pilih profil untuk membuka daftar tugas pribadi</p>
             </div>
           </div>
 
-          <div className="absolute inset-x-0 top-[195px] bottom-0 bg-white rounded-t-[30px] p-6 flex flex-col justify-between">
-            <form onSubmit={handleEnterWorkspace} className="flex-1 flex flex-col pt-2">
-              <label htmlFor="room-input" className="text-[12px] font-semibold text-neutral-700 mb-1.5">
-                Nama Ruang / Kode PIN
-              </label>
-              <div className="relative">
+          <div className="absolute inset-x-0 top-[180px] bottom-0 bg-white rounded-t-[30px] p-5 flex flex-col justify-between">
+            <div className="pt-2">
+              <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-2.5">
+                Pilih Profil
+              </p>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {/* Anggi Card */}
+                <button
+                  type="button"
+                  id="btn-profile-anggi"
+                  onClick={() => selectProfile('anggi')}
+                  className="flex flex-col items-center justify-center p-3.5 rounded-2xl border-2 border-blue-100 bg-gradient-to-b from-blue-50/70 to-white hover:border-brand hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all text-center group"
+                >
+                  <div className="w-12 h-12 rounded-full bg-blue-100 group-hover:bg-brand group-hover:text-white flex items-center justify-center text-[22px] mb-2 transition shadow-sm">
+                    👤
+                  </div>
+                  <h3 className="text-[15px] font-bold text-neutral-800 leading-tight">Anggi</h3>
+                  <span className="text-[10px] font-medium text-brand mt-0.5">Ruang Anggi</span>
+                </button>
+
+                {/* Cia Card */}
+                <button
+                  type="button"
+                  id="btn-profile-cia"
+                  onClick={() => selectProfile('cia')}
+                  className="flex flex-col items-center justify-center p-3.5 rounded-2xl border-2 border-pink-100 bg-gradient-to-b from-pink-50/70 to-white hover:border-pink-400 hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all text-center group"
+                >
+                  <div className="w-12 h-12 rounded-full bg-pink-100 group-hover:bg-pink-500 group-hover:text-white flex items-center justify-center text-[22px] mb-2 transition shadow-sm">
+                    🌸
+                  </div>
+                  <h3 className="text-[15px] font-bold text-neutral-800 leading-tight">Cia</h3>
+                  <span className="text-[10px] font-medium text-pink-600 mt-0.5">Ruang Cia</span>
+                </button>
+              </div>
+
+              {/* Custom Room section */}
+              <div className="relative flex items-center my-3">
+                <div className="flex-grow border-t border-neutral-200"></div>
+                <span className="shrink-0 px-2 text-[10px] font-medium text-neutral-400 uppercase">
+                  atau ruang / PIN lain
+                </span>
+                <div className="flex-grow border-t border-neutral-200"></div>
+              </div>
+
+              <form onSubmit={handleEnterWorkspace} className="flex gap-2 mt-2">
                 <input
                   id="room-input"
                   type="text"
                   value={inputWorkspace}
                   onChange={(e) => setInputWorkspace(e.target.value)}
-                  placeholder="misal: anggi atau 1234"
-                  autoFocus
-                  required
-                  className="w-full h-[46px] rounded-xl border border-neutral-300 focus:border-brand px-3.5 text-[14px] font-medium outline-none transition shadow-sm focus:ring-2 focus:ring-brand/20"
+                  placeholder="Nama ruang / PIN lain..."
+                  className="flex-1 h-[40px] rounded-xl border border-neutral-200 focus:border-brand px-3 text-[12px] font-medium outline-none transition shadow-sm focus:ring-2 focus:ring-brand/20"
                 />
-              </div>
+                <button
+                  type="submit"
+                  id="btn-enter-room"
+                  className="px-4 h-[40px] rounded-xl bg-neutral-800 hover:bg-neutral-900 text-white text-[12px] font-semibold active:scale-95 transition flex items-center gap-1 shadow-sm shrink-0"
+                >
+                  <span>Masuk</span>
+                  <ChevronRight size={14} />
+                </button>
+              </form>
+            </div>
 
-              <p className="text-[11px] text-neutral-500 mt-3 leading-relaxed">
-                💡 <strong>Setiap orang punya ruangnya sendiri.</strong> Tugas Anda hanya dapat dilihat dan diubah oleh mereka yang mengetahui nama ruang atau PIN yang sama.
-              </p>
-
-              <button
-                type="submit"
-                id="btn-enter-room"
-                className="mt-6 w-full h-[46px] rounded-xl bg-brand text-white text-[13px] font-semibold hover:bg-brand-dark shadow-md shadow-brand/30 active:scale-[0.98] transition flex items-center justify-center gap-2"
-              >
-                <span>Buka Tugas Saya</span>
-                <ChevronRight size={16} />
-              </button>
-
-              <div className="mt-auto p-3.5 rounded-xl bg-soft border border-soft-2 text-[11px] text-neutral-600 leading-relaxed">
-                <p className="font-semibold text-brand-dark mb-1">Tips:</p>
-                <ul className="list-disc pl-4 space-y-1">
-                  <li>Tidak perlu registrasi atau password ribet.</li>
-                  <li>Ingin berbagi tugas bersama tim/keluarga? Cukup gunakan nama ruang yang sama!</li>
-                </ul>
-              </div>
-            </form>
+            <div className="p-3 rounded-xl bg-soft border border-soft-2 text-[11px] text-neutral-600 leading-relaxed mt-auto">
+              <p className="font-semibold text-brand-dark mb-0.5">💡 Informasi:</p>
+              <p>Tugas Anggi & Cia tersimpan terpisah di cloud. Anda bisa berpindah profil kapan saja dengan satu klik!</p>
+            </div>
           </div>
         </Phone>
       ) : (
@@ -513,7 +553,7 @@ export default function App() {
                 title={`${sel.getDate()} ${MONTHS[sel.getMonth()] === 'September' ? 'Sept' : MONTHS[sel.getMonth()].slice(0, 3)}`}
                 light
                 workspace={workspace}
-                onSwitchWorkspace={handleSwitchWorkspace}
+                onOpenProfileModal={() => setShowProfileModal(true)}
               />
           <div className="flex items-end justify-between px-6 mt-8">
             <div className="text-white">
@@ -783,6 +823,86 @@ export default function App() {
                   className="text-[11px] px-3 py-1 rounded bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-medium transition"
                 >
                   Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Profile Switcher Modal */}
+        {showProfileModal && (
+          <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4 animate-pop">
+            <div className="bg-white rounded-2xl p-5 w-full max-w-[280px] shadow-2xl border border-soft-2 animate-pop">
+              <div className="flex items-center justify-between mb-3 pb-2 border-b border-neutral-100">
+                <div className="flex items-center gap-1.5">
+                  <Users size={16} className="text-brand" />
+                  <h4 className="text-[13px] font-bold text-neutral-800">Ganti Profil / Ruang</h4>
+                </div>
+                <button
+                  type="button"
+                  id="btn-close-profile-modal"
+                  onClick={() => setShowProfileModal(false)}
+                  className="text-neutral-400 hover:text-neutral-600 p-0.5"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-2 mb-3">
+                <button
+                  type="button"
+                  id="modal-select-anggi"
+                  onClick={() => { selectProfile('anggi'); setShowProfileModal(false) }}
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-xl border text-left transition active:scale-95 ${
+                    workspace === 'anggi'
+                      ? 'bg-blue-50 border-brand text-brand-dark font-semibold'
+                      : 'bg-neutral-50/70 hover:bg-blue-50/50 border-neutral-200 text-neutral-700'
+                  }`}
+                >
+                  <span className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-[16px] shrink-0">👤</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] leading-tight font-medium">Anggi</p>
+                    <p className="text-[10px] text-neutral-400">Ruang tugas Anggi</p>
+                  </div>
+                  {workspace === 'anggi' ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand text-white font-medium">Aktif</span>
+                  ) : (
+                    <span className="text-[10px] text-brand font-medium">Pilih</span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  id="modal-select-cia"
+                  onClick={() => { selectProfile('cia'); setShowProfileModal(false) }}
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-xl border text-left transition active:scale-95 ${
+                    workspace === 'cia'
+                      ? 'bg-pink-50 border-pink-400 text-pink-700 font-semibold'
+                      : 'bg-neutral-50/70 hover:bg-pink-50/50 border-neutral-200 text-neutral-700'
+                  }`}
+                >
+                  <span className="w-8 h-8 rounded-full bg-pink-100 flex items-center justify-center text-[16px] shrink-0">🌸</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] leading-tight font-medium">Cia</p>
+                    <p className="text-[10px] text-neutral-400">Ruang tugas Cia</p>
+                  </div>
+                  {workspace === 'cia' ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500 text-white font-medium">Aktif</span>
+                  ) : (
+                    <span className="text-[10px] text-pink-500 font-medium">Pilih</span>
+                  )}
+                </button>
+              </div>
+
+              <div className="border-t border-neutral-100 pt-2.5 flex flex-col gap-1.5">
+                <button
+                  type="button"
+                  id="modal-btn-logout"
+                  onClick={() => { setShowProfileModal(false); handleSwitchWorkspace() }}
+                  className="w-full py-2 px-3 rounded-lg text-[11px] font-medium text-red-500 hover:bg-red-50 flex items-center justify-center gap-1.5 transition active:scale-95"
+                >
+                  <LogOut size={13} />
+                  <span>Keluar ke Halaman Awal</span>
                 </button>
               </div>
             </div>
