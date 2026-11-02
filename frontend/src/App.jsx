@@ -32,9 +32,30 @@ const isoWeek = (d) => {
   return Math.ceil(((t - y0) / 86400000 + 1) / 7)
 }
 
-function Phone({ children, className = '' }) {
+function Phone({ children, className = '', toast, onCloseToast }) {
   return (
     <div className={`relative w-[340px] max-w-full h-[700px] rounded-[38px] bg-white overflow-hidden shadow-[0_20px_50px_rgba(60,130,230,0.22)] ${className}`}>
+      {toast && (
+        <div className="absolute top-4 inset-x-4 z-[70] flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-xl shadow-lg border backdrop-blur-md animate-pop transition-all bg-white/95 border-neutral-200/80">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+              toast.type === 'delete' ? 'bg-red-100 text-red-500' : 'bg-green-100 text-green-600'
+            }`}>
+              {toast.type === 'delete' ? <Trash2 size={13} /> : <Check size={13} strokeWidth={3} />}
+            </div>
+            <p className="text-[12px] font-medium text-neutral-800 truncate">
+              {toast.message}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onCloseToast}
+            className="text-neutral-400 hover:text-neutral-600 shrink-0 p-0.5"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
       {children}
     </div>
   )
@@ -229,6 +250,7 @@ export default function App() {
     setDesc('')
     setError('')
     go('home')
+    showToast('Tugas baru berhasil dibuat!', 'success')
 
     // 2. Background sync to database
     try {
@@ -256,6 +278,17 @@ export default function App() {
   }
 
   const [confirmTask, setConfirmTask] = useState(null)
+  const [deleteTaskConfirm, setDeleteTaskConfirm] = useState(null)
+  const [toast, setToast] = useState(null)
+  const toastTimeoutRef = useRef(null)
+
+  const showToast = (message, type = 'success') => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current)
+    setToast({ message, type })
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(null)
+    }, 3000)
+  }
 
   const toggle = async (t) => {
     const updatedDone = !t.done
@@ -291,8 +324,19 @@ export default function App() {
 
   const confirmComplete = () => {
     if (confirmTask) {
+      const title = confirmTask.title
       toggle(confirmTask)
       setConfirmTask(null)
+      showToast(`Tugas "${title}" selesai!`, 'success')
+    }
+  }
+
+  const confirmDelete = () => {
+    if (deleteTaskConfirm) {
+      const title = deleteTaskConfirm.title
+      remove(deleteTaskConfirm.id)
+      setDeleteTaskConfirm(null)
+      showToast(`Tugas "${title}" berhasil dihapus`, 'delete')
     }
   }
 
@@ -342,7 +386,7 @@ export default function App() {
   return (
     <main className="min-h-screen flex items-center justify-center p-6">
       {/* Page 1: Today */}
-      {page === 'home' && <Phone>
+      {page === 'home' && <Phone toast={toast} onCloseToast={() => setToast(null)}>
         <div className="absolute inset-x-0 top-0 h-[235px] bg-brand">
           <TopBar title={`${sel.getDate()} ${MONTHS[sel.getMonth()] === 'September' ? 'Sept' : MONTHS[sel.getMonth()].slice(0, 3)}`} light />
           <div className="flex items-end justify-between px-6 mt-8">
@@ -439,7 +483,7 @@ export default function App() {
                       )}
                     </div>
                     <button
-                      onClick={() => remove(t.id)}
+                      onClick={() => setDeleteTaskConfirm(t)}
                       aria-label="Delete task"
                       className="opacity-0 group-hover:opacity-100 transition text-red-400 hover:text-red-500 p-1"
                     >
@@ -490,6 +534,41 @@ export default function App() {
                   className="flex-1 py-2 px-3 rounded-lg bg-brand text-white text-[12px] font-medium hover:bg-brand-dark shadow-sm shadow-brand/30 active:scale-95 transition"
                 >
                   Ya, Selesai
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {deleteTaskConfirm && (
+          <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-6 animate-pop">
+            <div className="bg-white rounded-2xl p-5 w-full max-w-[280px] shadow-2xl border border-soft-2 text-center animate-pop">
+              <div className="w-12 h-12 rounded-full bg-red-50 mx-auto flex items-center justify-center text-red-500 mb-3 shadow-inner">
+                <Trash2 size={24} strokeWidth={2} />
+              </div>
+              <h4 className="text-[15px] font-semibold text-neutral-800">
+                Hapus Tugas?
+              </h4>
+              <p className="text-[12px] text-neutral-500 mt-1.5 mb-5 leading-relaxed">
+                Apakah Anda yakin ingin menghapus tugas <span className="font-semibold text-neutral-800">"{deleteTaskConfirm.title}"</span>? Tindakan ini tidak dapat dibatalkan.
+              </p>
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  id="btn-cancel-delete"
+                  onClick={() => setDeleteTaskConfirm(null)}
+                  className="flex-1 py-2 px-3 rounded-lg border border-neutral-200 text-neutral-600 text-[12px] font-medium hover:bg-neutral-50 active:scale-95 transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  id="btn-confirm-delete"
+                  onClick={confirmDelete}
+                  className="flex-1 py-2 px-3 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[12px] font-medium shadow-sm shadow-red-500/30 active:scale-95 transition"
+                >
+                  Hapus
                 </button>
               </div>
             </div>
@@ -586,7 +665,7 @@ export default function App() {
       </Phone>}
 
       {/* Page 2: Create Task - choose activity */}
-      {page === 'activity' && <Phone>
+      {page === 'activity' && <Phone toast={toast} onCloseToast={() => setToast(null)}>
         <TopBar title="Create Task" back onBack={() => go('home')} />
         <div className="px-5 mt-6">
           <DateChips selected={selected} onSelect={pick} gray month={month} />
@@ -621,7 +700,7 @@ export default function App() {
       </Phone>}
 
       {/* Page 3: Create Task form */}
-      {page === 'create' && <Phone>
+      {page === 'create' && <Phone toast={toast} onCloseToast={() => setToast(null)}>
         <div className="bg-soft pb-4 rounded-b-[26px]">
           <TopBar title="Create Task" back onBack={() => go('activity')} />
           <div className="h-3" />
