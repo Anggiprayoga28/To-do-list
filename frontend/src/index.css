@@ -9,12 +9,27 @@
   --color-soft-2: #dbeafe;
 }
 
+:root {
+  --page-bg: #d1e4fc;
+}
+
+:root[data-theme="cia"],
+body[data-theme="cia"],
+.theme-cia {
+  --color-brand: #f472b6;
+  --color-brand-dark: #db2777;
+  --color-soft: #fdf2f8;
+  --color-soft-2: #fce7f3;
+  --page-bg: #fce7f3;
+}
+
 body {
   font-family: var(--font-sans);
   min-height: 100vh;
   background:
-    linear-gradient(115deg, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0) 30%, rgba(255,255,255,0.25) 60%, rgba(255,255,255,0) 100%),
-    #d1e4fc;
+    linear-gradient(115deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0) 30%, rgba(255,255,255,0.25) 60%, rgba(255,255,255,0) 100%),
+    var(--page-bg);
+  transition: background-color 0.3s ease;
 }
 
 @keyframes pop {

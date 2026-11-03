@@ -35,9 +35,13 @@ const isoWeek = (d) => {
   return Math.ceil(((t - y0) / 86400000 + 1) / 7)
 }
 
-function AppShell({ children, toast, onCloseToast }) {
+function AppShell({ children, toast, onCloseToast, isCia }) {
   return (
-    <div className="w-full max-w-full sm:max-w-xl md:max-w-2xl lg:max-w-3xl min-h-screen sm:min-h-0 sm:my-8 bg-white sm:rounded-[28px] shadow-[0_20px_60px_rgba(50,110,220,0.15)] border border-blue-100/60 overflow-hidden flex flex-col relative transition-all">
+    <div className={`w-full max-w-full sm:max-w-xl md:max-w-2xl lg:max-w-3xl min-h-screen sm:min-h-0 sm:my-8 bg-white sm:rounded-[28px] ${
+      isCia
+        ? 'shadow-[0_20px_50px_rgba(244,114,182,0.15)] border border-pink-100/70'
+        : 'shadow-[0_20px_60px_rgba(50,110,220,0.15)] border border-blue-100/60'
+    } overflow-hidden flex flex-col relative transition-all`}>
       {toast && (
         <div className="fixed sm:absolute top-4 inset-x-4 sm:inset-x-6 z-[70] flex items-center justify-between gap-3 px-4 py-3 rounded-2xl shadow-xl border backdrop-blur-md animate-pop transition-all bg-white/95 border-neutral-200/80">
           <div className="flex items-center gap-3 min-w-0">
@@ -179,11 +183,27 @@ export default function App() {
   const today = useMemo(() => fmt(new Date()), [])
   const [workspace, setWorkspace] = useState(() => {
     try {
-      return localStorage.getItem('todo_workspace') || ''
+      return (localStorage.getItem('todo_workspace') || '').trim().toLowerCase()
     } catch {
       return ''
     }
   })
+  const isCia = workspace.trim().toLowerCase() === 'cia'
+
+  useEffect(() => {
+    if (isCia) {
+      document.documentElement.dataset.theme = 'cia'
+      document.body.dataset.theme = 'cia'
+    } else {
+      delete document.documentElement.dataset.theme
+      delete document.body.dataset.theme
+    }
+    return () => {
+      delete document.documentElement.dataset.theme
+      delete document.body.dataset.theme
+    }
+  }, [isCia])
+
   const [inputWorkspace, setInputWorkspace] = useState('')
   const [todos, setTodos] = useState([])
   const [error, setError] = useState('')
@@ -536,9 +556,13 @@ export default function App() {
           </div>
         </AppShell>
       ) : (
-        <AppShell toast={toast} onCloseToast={() => setToast(null)}>
+        <AppShell toast={toast} onCloseToast={() => setToast(null)} isCia={isCia}>
           {/* Header Banner */}
-          <div className="bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-500 text-white pb-6 pt-1 rounded-b-[30px] sm:rounded-b-[34px] shadow-lg shadow-blue-500/15">
+          <div className={`text-white pb-6 pt-1 rounded-b-[30px] sm:rounded-b-[34px] transition-all ${
+            isCia
+              ? 'bg-gradient-to-r from-pink-400 via-rose-400 to-pink-400 shadow-lg shadow-pink-300/20'
+              : 'bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-500 shadow-lg shadow-blue-500/15'
+          }`}>
             <TopBar
               title={`${sel.getDate()} ${MONTHS[sel.getMonth()] === 'September' ? 'Sept' : MONTHS[sel.getMonth()].slice(0, 3)}`}
               light
@@ -570,7 +594,9 @@ export default function App() {
               <button
                 id="add-new"
                 onClick={() => setShowCreateModal(true)}
-                className="self-start sm:self-auto bg-white text-blue-600 hover:bg-blue-50 text-xs sm:text-sm font-bold rounded-xl px-5 py-2.5 shadow-md hover:scale-105 active:scale-95 transition flex items-center gap-1.5 cursor-pointer"
+                className={`self-start sm:self-auto bg-white ${
+                  isCia ? 'text-pink-500 hover:bg-pink-50/80' : 'text-blue-600 hover:bg-blue-50'
+                } text-xs sm:text-sm font-bold rounded-xl px-5 py-2.5 shadow-md hover:scale-105 active:scale-95 transition flex items-center gap-1.5 cursor-pointer`}
               >
                 <Plus size={18} strokeWidth={2.5} />
                 <span>Tambah Tugas</span>
@@ -609,7 +635,7 @@ export default function App() {
                 type="button"
                 id="btn-open-calendar"
                 onClick={() => setShowCalendarModal(true)}
-                className="flex items-center gap-1.5 text-xs font-semibold text-brand hover:text-brand-dark bg-soft hover:bg-soft-2 px-3 py-1.5 rounded-xl transition active:scale-95 border border-blue-200/50"
+                className="flex items-center gap-1.5 text-xs font-semibold text-brand hover:text-brand-dark bg-soft hover:bg-soft-2 px-3 py-1.5 rounded-xl transition active:scale-95 border border-soft-2"
               >
                 <Calendar size={14} />
                 <span>Kalender</span>
@@ -666,7 +692,7 @@ export default function App() {
           <div className="flex-1 px-5 sm:px-8 pb-8 overflow-y-auto min-h-[320px]">
             {filteredTasks.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center text-brand mb-3">
+                <div className="w-16 h-16 rounded-2xl bg-soft flex items-center justify-center text-brand mb-3">
                   <ClipboardList size={30} strokeWidth={1.5} />
                 </div>
                 <h4 className="text-sm sm:text-base font-bold text-neutral-700">Tidak ada tugas</h4>
@@ -702,7 +728,7 @@ export default function App() {
                         className={`group flex items-start sm:items-center gap-3.5 p-3.5 sm:p-4 rounded-2xl border transition-all duration-200 ${
                           t.done
                             ? 'bg-neutral-50/80 border-neutral-200/60 opacity-60'
-                            : 'bg-white hover:bg-blue-50/20 border-neutral-200/90 hover:border-brand/40 shadow-sm hover:shadow-md'
+                            : 'bg-white hover:bg-soft/40 border-neutral-200/90 hover:border-brand/40 shadow-sm hover:shadow-md'
                         }`}
                       >
                         {/* Checkbox */}
@@ -931,7 +957,7 @@ export default function App() {
                     onClick={() => { selectProfile('anggi'); setShowProfileModal(false) }}
                     className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition active:scale-95 ${
                       workspace === 'anggi'
-                        ? 'bg-blue-50 border-brand text-brand-dark font-semibold'
+                        ? 'bg-blue-50 border-blue-500 text-blue-700 font-semibold'
                         : 'bg-neutral-50/70 hover:bg-blue-50/50 border-neutral-200 text-neutral-700'
                     }`}
                   >
@@ -941,9 +967,9 @@ export default function App() {
                       <p className="text-[11px] text-neutral-400">Ruang tugas Anggi</p>
                     </div>
                     {workspace === 'anggi' ? (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand text-white font-medium">Aktif</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500 text-white font-medium">Aktif</span>
                     ) : (
-                      <span className="text-xs text-brand font-medium">Pilih</span>
+                      <span className="text-xs text-blue-500 font-medium">Pilih</span>
                     )}
                   </button>
 
@@ -953,7 +979,7 @@ export default function App() {
                     onClick={() => { selectProfile('cia'); setShowProfileModal(false) }}
                     className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition active:scale-95 ${
                       workspace === 'cia'
-                        ? 'bg-pink-50 border-pink-400 text-pink-700 font-semibold'
+                        ? 'bg-pink-50/80 border-pink-300 text-pink-700 font-semibold'
                         : 'bg-neutral-50/70 hover:bg-pink-50/50 border-neutral-200 text-neutral-700'
                     }`}
                   >
@@ -963,9 +989,9 @@ export default function App() {
                       <p className="text-[11px] text-neutral-400">Ruang tugas Cia</p>
                     </div>
                     {workspace === 'cia' ? (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500 text-white font-medium">Aktif</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-400 text-white font-medium">Aktif</span>
                     ) : (
-                      <span className="text-xs text-pink-500 font-medium">Pilih</span>
+                      <span className="text-xs text-pink-400 font-medium">Pilih</span>
                     )}
                   </button>
                 </div>
